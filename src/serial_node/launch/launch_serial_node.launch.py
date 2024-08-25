@@ -18,8 +18,8 @@ def generate_launch_description():
     # Create node launch description
     node = Node(
         package='serial_node',
-        name='serial_node',
         executable='serial_node',
+        name='serial_node',
         parameters=[config] #! We could specify more than one source here
     )
 

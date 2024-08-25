@@ -3,3 +3,9 @@ serial_node:
     port_name: "/dev/ttyACM0"
     baud_rate: 9600
     terminator: "\n"
+    sampling_thread: 300                  #millisecond
+    inter_byte_timeout: -1                # Valore speciale che il codice riconosce come serial::Timeout::max()
+    read_timeout_constant: 1000           #millisecond
+    read_timeout_multiplier: 0            #millisecond
+    write_timeout_constant: 1000          #millisecond
+    write_timeout_multiplier: 0           #millisecond

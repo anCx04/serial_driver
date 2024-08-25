@@ -2,16 +2,36 @@
 #include "serial_node/serial_node.hpp"
 
 SerialNode::SerialNode()
-: Node("serial_node"), is_enabled_(false)
+: Node("serial_node")
 {
   // Leggi i parametri
   this->declare_parameter<std::string>("port_name", "/dev/ttyUSB0");
   this->declare_parameter<int>("baud_rate", 9600);
   this->declare_parameter<std::string>("terminator", "");
+  this->declare_parameter<int32_t>("inter_byte_timeout", -1);
+  this->declare_parameter<int32_t>("read_timeout_constant", 1000);
+  this->declare_parameter<int32_t>("read_timeout_multiplier", 0);
+  this->declare_parameter<int32_t>("write_timeout_constant", 1000);
+  this->declare_parameter<int32_t>("write_timeout_multiplier", 0);
+  this->declare_parameter<int32_t>("sampling_thread", 300);
 
   this->get_parameter("port_name", port_name_);
   this->get_parameter("baud_rate", baud_rate_);
   this->get_parameter("terminator", terminator_);
+  this->get_parameter("inter_byte_timeout", inter_byte_timeout_);
+  this->get_parameter("read_timeout_constant", read_timeout_constant_);
+  this->get_parameter("read_timeout_multiplier", read_timeout_multiplier_);
+  this->get_parameter("write_timeout_constant", write_timeout_constant_);
+  this->get_parameter("write_timeout_multiplier", write_timeout_multiplier_);
+  this->get_parameter("sampling_thread", sampling_thread_);
+
+  timeout_ = serial::Timeout(
+        (inter_byte_timeout_ == -1) ? serial::Timeout::max() : inter_byte_timeout_,
+        read_timeout_constant_,
+        read_timeout_multiplier_,
+        write_timeout_constant_,
+        write_timeout_multiplier_
+    );
 
   enable_service_ =
     this->create_service<std_srvs::srv::SetBool>(
@@ -40,9 +60,12 @@ void SerialNode::enableServiceCallback(
   if (request->data && !is_enabled_) {
     // Abilita il nodo
 
-    serial_port_ = std::make_unique<serial::Serial>(
-      port_name_, baud_rate_, serial::Timeout::simpleTimeout(
-        1000));
+    RCLCPP_INFO(this->get_logger(), "Port name: %s", port_name_.c_str());
+    RCLCPP_INFO(this->get_logger(), "Baud rate: %d", baud_rate_);
+    RCLCPP_INFO(this->get_logger(), "Terminator: %s", terminator_.c_str());
+
+    //serial_port_ = std::make_unique<serial::Serial>(port_name_, baud_rate_, serial::Timeout::simpleTimeout(1000));
+    serial_port_ = std::make_unique<serial::Serial>(port_name_, baud_rate_,timeout_);
     if (!serial_port_->isOpen()) {
       throw std::runtime_error("Failed to open the serial port.");
     }
@@ -93,31 +116,35 @@ void SerialNode::serialReadThread()
         result = serial_port_->read(65536);
       }
 
-       if (result.size() >= 2 && result[result.size() - 2] == '\r' && result.back() == '\n') {
+    /*if (result.size() >= 2 && result[result.size() - 2] == '\r' && result.back() == terminator_.at(0)) {
         result.erase(result.size() - 2);  // Rimuove gli ultimi due caratteri
     }
+    else if(result.size() >= 1 && result.back() == terminator_.at(0)){
+        result.erase(result.size() - 1);
+    }*/
+    removeTerminator(result, terminator_);
 
-      auto msg = std_msgs::msg::UInt8MultiArray();
-      msg.data.insert(msg.data.end(), result.begin(), result.end());
-      publisher_->publish(msg);
+    auto msg = std_msgs::msg::UInt8MultiArray();
+    msg.data.insert(msg.data.end(), result.begin(), result.end());
+    publisher_->publish(msg);
 
-      /*  std::stringstream ss;
+        std::stringstream ss;
         ss << "Dati da pubblicare: [";
         for (size_t i = 0; i < msg.data.size(); ++i)
         {
             ss << static_cast<int>(msg.data[i]);
-            if (i < msg.data.size() - 1)
+            if (i < msg.data.size()-1)
             {
                 ss << ", ";
             }
         }
         ss << "]";
-        RCLCPP_INFO(this->get_logger(), ss.str().c_str()); */
+        RCLCPP_INFO(this->get_logger(), ss.str().c_str());
 
-      std::string message = result;
-      RCLCPP_INFO(this->get_logger(), "Published message %s", message.c_str());
+      /*std::string message = result;
+      RCLCPP_INFO(this->get_logger(), "Published message %s", message.c_str());*/
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));      // Evita di occupare inutilmente la CPU
+    std::this_thread::sleep_for(std::chrono::milliseconds(sampling_thread_));
   }
 }
 
@@ -151,6 +178,18 @@ void SerialNode::pub_timer_callback(void)
   // Log something
   std::string message = port_name_ + "/" + std::to_string(baud_rate_) + "/" + terminator_ + ".";
   RCLCPP_INFO(this->get_logger(), "Published message %s", message.c_str());
+}
+
+void SerialNode::removeTerminator(std::string& result, const std::string& terminator) {
+    size_t terminator_length = terminator.size();
+
+    // Verifica se la lunghezza della stringa è sufficiente per contenere il terminatore
+    if (result.size() >= terminator_length) {
+        // Controlla se la parte finale della stringa corrisponde al terminatore
+        if (result.compare(result.size() - terminator_length, terminator_length, terminator) == 0) {
+            result.erase(result.size() - terminator_length);  // Rimuove il terminatore
+        }
+    }
 }
 
 int main(int argc, char * argv[])
