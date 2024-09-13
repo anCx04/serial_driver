@@ -146,7 +146,7 @@ void SerialNode::enableServiceCallback(
     response->message = "";
   } else {
 
-    response->success = false;
+    response->success = true;
     response->message = "Node is already in the requested state.";
   }
 }
